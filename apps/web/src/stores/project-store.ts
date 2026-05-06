@@ -484,58 +484,97 @@ export const useProjectStore = create<ProjectState>()(
           error: null,
         });
 
-        // Auto-restore placeholder assets from saved FileSystemFileHandles (same machine)
+        // Auto-restore placeholder assets — three tiers, run in order:
+        //   Tier 0: fetch originalUrl (R2 presigned URLs from Cami)
+        //   Tier 1: rebind via stored FileSystemFileHandle (same machine)
+        //   Tier 2: scan stored relink directory for matching name+size
         const placeholders = fixedProject.mediaLibrary.items.filter(
-          (item) => item.isPlaceholder && item.sourceFile,
+          (item) => item.isPlaceholder,
         );
-        if (placeholders.length > 0 && "FileSystemFileHandle" in window) {
+        if (placeholders.length > 0) {
           (async () => {
             let restored = 0;
-            const stillMissing: typeof placeholders = [];
 
-            // Tier 1: try individual file handles (follow file across folder moves)
+            // Tier 0: auto-resolve originalUrl. Items without originalUrl (or
+            // already populated via blob) skip directly to Tier 1.
+            let pending: typeof placeholders = [];
             for (const item of placeholders) {
-              if (!item.sourceFile) continue;
+              if (!item.originalUrl || item.blob) {
+                pending.push(item);
+                continue;
+              }
               try {
-                const handle = await loadFileHandle(item.sourceFile.name, item.sourceFile.size);
-                if (!handle) { stillMissing.push(item); continue; }
-                const file = await handle.getFile();
-                await get().replaceMediaAsset(item.id, file, item.sourceFile.folder);
-                restored++;
-              } catch {
-                stillMissing.push(item); // stale handle
+                const resp = await fetch(item.originalUrl);
+                if (!resp.ok) {
+                  console.warn(`[ProjectStore] Tier 0 fetch failed for ${item.name}: HTTP ${resp.status}`);
+                  pending.push(item);
+                  continue;
+                }
+                const blob = await resp.blob();
+                const file = new File([blob], item.name, { type: blob.type || "application/octet-stream" });
+                const result = await get().replaceMediaAsset(item.id, file);
+                if (result.success) {
+                  restored++;
+                } else {
+                  console.warn(`[ProjectStore] Tier 0 replaceMediaAsset failed for ${item.name}:`, result.error);
+                  pending.push(item);
+                }
+              } catch (err) {
+                console.warn(`[ProjectStore] Tier 0 fetch error for ${item.name}:`, err);
+                pending.push(item);
               }
             }
 
-            // Tier 2: scan the stored relink folder for files not found via handle
-            if (stillMissing.length > 0) {
-              try {
-                const dirInfo = await loadDirectoryHandle(fixedProject.id);
-                if (dirInfo) {
-                  const fileMap = new Map<string, { file: File; folder: string }>();
-                  const entries = (dirInfo.handle as unknown as { entries: () => AsyncIterableIterator<[string, FileSystemHandle]> }).entries();
-                  for await (const [, fh] of entries) {
-                    if ((fh as FileSystemHandle).kind === "file") {
-                      const f = await (fh as FileSystemFileHandle).getFile();
-                      fileMap.set(`${f.name.toLowerCase()}:${f.size}`, { file: f, folder: dirInfo.folderName });
-                    }
-                  }
-                  for (const item of stillMissing) {
-                    if (!item.sourceFile) continue;
-                    const entry = fileMap.get(`${item.sourceFile.name.toLowerCase()}:${item.sourceFile.size}`);
-                    if (entry) {
-                      try {
-                        await get().replaceMediaAsset(item.id, entry.file, entry.folder);
-                        restored++;
-                      } catch { /* skip */ }
-                    }
-                  }
+            // Tier 1 & 2 require FileSystemFileHandle support (Chromium-family browsers)
+            // and a stored sourceFile hint. Items without sourceFile cannot be relinked
+            // by file system access, so they're left as placeholders for manual relink.
+            if (pending.length > 0 && "FileSystemFileHandle" in window) {
+              const stillMissing: typeof placeholders = [];
+
+              // Tier 1: try individual file handles (follow file across folder moves)
+              for (const item of pending) {
+                if (!item.sourceFile) { stillMissing.push(item); continue; }
+                try {
+                  const handle = await loadFileHandle(item.sourceFile.name, item.sourceFile.size);
+                  if (!handle) { stillMissing.push(item); continue; }
+                  const file = await handle.getFile();
+                  await get().replaceMediaAsset(item.id, file, item.sourceFile.folder);
+                  restored++;
+                } catch {
+                  stillMissing.push(item); // stale handle
                 }
-              } catch { /* dir handle stale or unavailable */ }
+              }
+
+              // Tier 2: scan the stored relink folder for files not found via handle
+              if (stillMissing.length > 0) {
+                try {
+                  const dirInfo = await loadDirectoryHandle(fixedProject.id);
+                  if (dirInfo) {
+                    const fileMap = new Map<string, { file: File; folder: string }>();
+                    const entries = (dirInfo.handle as unknown as { entries: () => AsyncIterableIterator<[string, FileSystemHandle]> }).entries();
+                    for await (const [, fh] of entries) {
+                      if ((fh as FileSystemHandle).kind === "file") {
+                        const f = await (fh as FileSystemFileHandle).getFile();
+                        fileMap.set(`${f.name.toLowerCase()}:${f.size}`, { file: f, folder: dirInfo.folderName });
+                      }
+                    }
+                    for (const item of stillMissing) {
+                      if (!item.sourceFile) continue;
+                      const entry = fileMap.get(`${item.sourceFile.name.toLowerCase()}:${item.sourceFile.size}`);
+                      if (entry) {
+                        try {
+                          await get().replaceMediaAsset(item.id, entry.file, entry.folder);
+                          restored++;
+                        } catch { /* skip */ }
+                      }
+                    }
+                  }
+                } catch { /* dir handle stale or unavailable */ }
+              }
             }
 
             if (restored > 0) {
-              console.info(`[ProjectStore] Auto-restored ${restored} asset(s) from file handles`);
+              console.info(`[ProjectStore] Auto-restored ${restored} asset(s)`);
             }
           })();
         }
