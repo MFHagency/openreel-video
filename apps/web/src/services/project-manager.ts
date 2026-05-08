@@ -620,6 +620,61 @@ class ProjectManager {
       }
     });
   }
+
+  /**
+   * Import a project object directly from a parsed .oreel JSON.
+   * Used by both the file-upload path (B) and the Cami deep-link path (A).
+   * Calls projectStore.loadProject which triggers Tier 0 originalUrl auto-resolve.
+   */
+  async importFromOreelData(project: Project): Promise<boolean> {
+    const { useProjectStore } = await import("../stores/project-store");
+    try {
+      await useProjectStore.getState().loadProject(project);
+      return true;
+    } catch (err) {
+      console.error("[ProjectManager] importFromOreelData failed:", err);
+      return false;
+    }
+  }
+
+  /**
+   * Fetch a project from Cami's editor-project-from-content EF by content_file_id,
+   * then import via importFromOreelData. Tier 0 then resolves the R2 originalUrl
+   * into a Blob automatically on loadProject.
+   */
+  async importFromCami(contentFileId: string): Promise<boolean> {
+    const url = import.meta.env.VITE_CAMI_SUPABASE_URL;
+    const key = import.meta.env.VITE_CAMI_SUPABASE_ANON_KEY;
+    if (!url || !key) {
+      console.error("[ProjectManager] missing VITE_CAMI_SUPABASE_URL or VITE_CAMI_SUPABASE_ANON_KEY");
+      return false;
+    }
+    try {
+      const resp = await fetch(`${url}/functions/v1/editor-project-from-content`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${key}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ content_file_id: contentFileId }),
+      });
+      if (!resp.ok) {
+        const text = await resp.text();
+        console.error(`[ProjectManager] importFromCami EF returned ${resp.status}:`, text);
+        return false;
+      }
+      const data = await resp.json();
+      const project = data.project ?? data;
+      if (!project?.mediaLibrary?.items) {
+        console.error("[ProjectManager] importFromCami: malformed EF response (no mediaLibrary.items)");
+        return false;
+      }
+      return this.importFromOreelData(project);
+    } catch (err) {
+      console.error("[ProjectManager] importFromCami fetch error:", err);
+      return false;
+    }
+  }
 }
 
 export const projectManager = new ProjectManager();

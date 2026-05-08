@@ -1,5 +1,6 @@
 import { useEffect, useCallback, useRef, lazy, Suspense } from "react";
 import { ToastContainer } from "./components/Toast";
+import { toast } from "./stores/notification-store";
 import { ScriptViewDialog } from "./components/editor/ScriptViewDialog";
 import { SearchModal } from "./components/editor/SearchModal";
 import { MobileBlocker } from "./components/MobileBlocker";
@@ -89,6 +90,18 @@ function App() {
 
       createNewProject(projectName, { width, height, frameRate });
       navigate("editor");
+    } else if (route === "import" && params.contentFileId) {
+      hasHandledInitialRoute.current = true;
+      void (async () => {
+        const { projectManager } = await import("./services/project-manager");
+        const success = await projectManager.importFromCami(params.contentFileId!);
+        if (success) {
+          navigate("editor");
+        } else {
+          toast.error("Import failed", "Failed to import project from Cami. Check console for details.");
+          navigate("welcome");
+        }
+      })();
     } else if (route === "editor" && skipWelcomeScreen) {
       hasHandledInitialRoute.current = true;
     } else if (["welcome", "templates", "recent"].includes(route)) {
