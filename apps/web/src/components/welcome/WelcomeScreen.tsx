@@ -7,6 +7,7 @@ import {
   Monitor,
   Square,
   FolderOpen,
+  Upload,
 } from "lucide-react";
 import { Button, Switch, Label } from "@openreel/ui";
 import { useProjectStore } from "../../stores/project-store";
@@ -17,6 +18,7 @@ import { RecentProjects } from "./RecentProjects";
 import { useRouter } from "../../hooks/use-router";
 import { useEditorPreload } from "../../hooks/useEditorPreload";
 import { useAnalytics, AnalyticsEvents } from "../../hooks/useAnalytics";
+import { projectManager } from "../../services/project-manager";
 
 interface FormatOption {
   id: string;
@@ -360,6 +362,20 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ initialTab }) => {
             >
               <FolderOpen size={16} />
               Open editor
+            </Button>
+            <Button
+              variant="outline"
+              onClick={async () => {
+                const project = await projectManager.openProject();
+                if (project) {
+                  const ok = await projectManager.importFromOreelData(project);
+                  if (ok) navigate("editor");
+                }
+              }}
+              className="rounded-xl"
+            >
+              <Upload size={16} />
+              Import .oreel file
             </Button>
           </div>
         </div>
