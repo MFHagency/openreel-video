@@ -868,6 +868,22 @@ export const Toolbar: React.FC = () => {
           </TooltipContent>
         </Tooltip>
 
+        {/* AI Assist button — Phase 4a stub. Full implementation in Phase 4b. */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => alert("AI features coming soon (Phase 4b)")}
+              className="flex items-center gap-2 px-3 py-2 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 rounded-lg transition-colors"
+            >
+              <Sparkles size={14} />
+              <span className="text-sm font-medium">AI Assist</span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>AI features coming soon (Phase 4b)</p>
+          </TooltipContent>
+        </Tooltip>
+
         <div className="relative">
           {exportState.isExporting ? (
             <div className="h-10 px-4 bg-background-secondary border border-border rounded-lg flex items-center gap-3 min-w-[200px]">
