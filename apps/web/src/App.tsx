@@ -40,10 +40,16 @@ function App() {
   const { activeModal, closeModal, skipWelcomeScreen } = useUIStore();
   const { openModal: openSearchModal } = useUIStore();
   const createNewProject = useProjectStore((state) => state.createNewProject);
-  const { showDialog, availableSaves, recover, dismiss, clearAll } = useProjectRecovery();
-
   const { route, params, navigate, parsedDimensions, fps } = useRouter();
   const hasHandledInitialRoute = useRef(false);
+
+  // Phase 4b.1: skip autosave-recovery when EVE is intentionally loading a Cami draft
+  // or doing a fresh import — those flows produce a known-good project, so the recovery
+  // dialog would only be noise (and worse, race the loadFromDraft fetch).
+  const skipRecovery = route === "draft" || route === "import";
+  const { showDialog, availableSaves, recover, dismiss, clearAll } = useProjectRecovery({
+    skip: skipRecovery,
+  });
 
   useKieAIPoller();
 

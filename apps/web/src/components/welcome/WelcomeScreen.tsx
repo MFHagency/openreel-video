@@ -15,6 +15,7 @@ import { useUIStore } from "../../stores/ui-store";
 import { SOCIAL_MEDIA_PRESETS, type SocialMediaCategory } from "@openreel/core";
 import { TemplateGallery } from "./TemplateGallery";
 import { RecentProjects } from "./RecentProjects";
+import { CamiDrafts } from "./CamiDrafts";
 import { useRouter } from "../../hooks/use-router";
 import { useEditorPreload } from "../../hooks/useEditorPreload";
 import { useAnalytics, AnalyticsEvents } from "../../hooks/useAnalytics";
@@ -237,6 +238,14 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ initialTab }) => {
           <div className="w-16" />
         </header>
         <div className="flex-1 overflow-y-auto p-6">
+          <CamiDrafts
+            onOpenDraft={(draftId) => {
+              // Route to the #/draft/<id> handler in App.tsx — same flow as
+              // mfh-platform's Edit-button entry. We are already inside a tab,
+              // so use location.hash (not window.open).
+              window.location.hash = `#/draft/${draftId}`;
+            }}
+          />
           <RecentProjects onProjectSelected={handleProjectSelected} />
         </div>
       </div>

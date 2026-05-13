@@ -8,9 +8,10 @@ interface RecoveryState {
   showDialog: boolean;
 }
 
-export function useProjectRecovery() {
+export function useProjectRecovery(options?: { skip?: boolean }) {
+  const skip = options?.skip ?? false;
   const [state, setState] = useState<RecoveryState>({
-    isChecking: true,
+    isChecking: !skip,
     availableSaves: [],
     showDialog: false,
   });
@@ -18,6 +19,10 @@ export function useProjectRecovery() {
   const recoverFromAutoSave = useProjectStore((s) => s.recoverFromAutoSave);
 
   useEffect(() => {
+    if (skip) {
+      setState({ isChecking: false, availableSaves: [], showDialog: false });
+      return;
+    }
     const checkForRecovery = async () => {
       try {
         await autoSaveManager.initialize();
@@ -47,7 +52,7 @@ export function useProjectRecovery() {
     };
 
     checkForRecovery();
-  }, []);
+  }, [skip]);
 
   const recover = useCallback(
     async (saveId: string) => {
