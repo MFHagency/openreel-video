@@ -109,7 +109,34 @@ export const Toolbar: React.FC = () => {
     startMoGraphTour();
   }, []);
 
-  // Phase 4b.1: Save current project to Cami via export-draft-to-content render=false.
+  // Phase 4b.1: strip ephemeral media state (blob: URLs, raw blobs, etc.) so the
+// serialized project stays small and doesn't carry references that 404 on reload.
+function stripEphemeralMediaState(project: unknown): unknown {
+  if (!project || typeof project !== "object") return project;
+  const cloned = JSON.parse(JSON.stringify(project)) as Record<string, unknown>;
+  const media = cloned.mediaLibrary as { items?: Array<Record<string, unknown>> } | undefined;
+  if (media?.items) {
+    for (const item of media.items) {
+      if (typeof item.thumbnailUrl === "string" && item.thumbnailUrl.startsWith("blob:")) {
+        item.thumbnailUrl = null;
+      }
+      if (Array.isArray(item.filmstripThumbnails)) {
+        item.filmstripThumbnails = [];
+      }
+      // Strip waveform peaks — bulky and regenerable
+      if (Array.isArray(item.waveformData)) {
+        item.waveformData = null;
+      }
+      // Drop the in-memory blob — never serializable anyway
+      if ("blob" in item) {
+        item.blob = null;
+      }
+    }
+  }
+  return cloned;
+}
+
+// Phase 4b.1: Save current project to Cami via export-draft-to-content render=false.
   const [isSaving, setIsSaving] = useState(false);
   const handleSaveToCami = useCallback(async () => {
     const draftId = (window as unknown as { __camiDraftId?: string }).__camiDraftId;
@@ -122,7 +149,11 @@ export const Toolbar: React.FC = () => {
     }
     setIsSaving(true);
     try {
-      const project = useProjectStore.getState().project;
+      const rawProject = useProjectStore.getState().project;
+      // Strip blob: URLs and blobs before serializing. They reference the current
+      // document context and become 404s after reload. load-draft regenerates
+      // fresh presigned URLs and Tier 0 rebuilds thumbnails from the blob.
+      const project = stripEphemeralMediaState(rawProject);
       const url = import.meta.env.VITE_CAMI_SUPABASE_URL;
       const key = import.meta.env.VITE_CAMI_SUPABASE_ANON_KEY;
       if (!url || !key) {
