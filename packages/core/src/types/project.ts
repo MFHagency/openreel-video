@@ -22,6 +22,15 @@ export interface Project {
   readonly shapeClips?: ShapeClip[];
   readonly svgClips?: SVGClip[];
   readonly stickerClips?: StickerClip[];
+  /** Cami platform linkage metadata. Set when project was loaded from a Cami draft. */
+  readonly _camiMeta?: CamiMeta;
+}
+
+/** Cami platform linkage. Persisted with project to IndexedDB so refresh preserves it. */
+export interface CamiMeta {
+  readonly draftId: string | null;
+  readonly creatorId: string | null;
+  readonly contentFileId: string | null;
 }
 
 export interface MediaLibrary {

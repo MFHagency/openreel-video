@@ -39,6 +39,7 @@ import {
 } from "@openreel/core";
 import { ExportDialog } from "./ExportDialog";
 import { ScreenRecorder } from "./ScreenRecorder";
+import { AIPanel } from "./AIPanel";
 import { HistoryPanel } from "./inspector/HistoryPanel";
 import { ProjectSwitcher } from "./ProjectSwitcher";
 import { SettingsDialog } from "./settings/SettingsDialog";
@@ -138,8 +139,10 @@ function stripEphemeralMediaState(project: unknown): unknown {
 
 // Phase 4b.1: Save current project to Cami via export-draft-to-content render=false.
   const [isSaving, setIsSaving] = useState(false);
+  const [aiPanelOpen, setAiPanelOpen] = useState(false);
   const handleSaveToCami = useCallback(async () => {
-    const draftId = (window as unknown as { __camiDraftId?: string }).__camiDraftId;
+    const camiMeta = useProjectStore.getState().project._camiMeta;
+    const draftId = camiMeta?.draftId;
     if (!draftId) {
       toast.error(
         "Save unavailable",
@@ -971,7 +974,7 @@ function stripEphemeralMediaState(project: unknown): unknown {
         <Tooltip>
           <TooltipTrigger asChild>
             <button
-              onClick={() => alert("AI features coming soon (Phase 4b.2)")}
+              onClick={() => setAiPanelOpen(true)}
               className="flex items-center gap-2 px-3 py-2 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 rounded-lg transition-colors"
             >
               <Sparkles size={14} />
@@ -979,7 +982,7 @@ function stripEphemeralMediaState(project: unknown): unknown {
             </button>
           </TooltipTrigger>
           <TooltipContent>
-            <p>AI features coming soon (Phase 4b.2)</p>
+            <p>AI suggestions for captions, music, effects, and re-pitch</p>
           </TooltipContent>
         </Tooltip>
 
@@ -1131,6 +1134,8 @@ function stripEphemeralMediaState(project: unknown): unknown {
         projectWidth={project.settings?.width ?? 1920}
         projectHeight={project.settings?.height ?? 1080}
       />
+
+      <AIPanel open={aiPanelOpen} onClose={() => setAiPanelOpen(false)} />
 
       <ScreenRecorder
         isOpen={isRecorderOpen}

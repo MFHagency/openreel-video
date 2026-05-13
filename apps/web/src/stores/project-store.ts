@@ -99,6 +99,8 @@ export interface ProjectState {
     settings?: Partial<ProjectSettings>,
   ) => void;
   loadProject: (project: Project) => void;
+  /** Phase 4b.2: stash Cami platform linkage on the project. Persists via IndexedDB. */
+  setCamiMeta: (meta: { draftId: string | null; creatorId: string | null; contentFileId: string | null }) => void;
   renameProject: (name: string) => Promise<ActionResult>;
   updateSettings: (settings: Partial<ProjectSettings>) => Promise<ActionResult>;
 
@@ -581,6 +583,21 @@ export const useProjectStore = create<ProjectState>()(
       },
 
       // Rename project
+      setCamiMeta: (meta) => {
+        const { project } = get();
+        set({
+          project: {
+            ...project,
+            _camiMeta: {
+              draftId: meta.draftId,
+              creatorId: meta.creatorId,
+              contentFileId: meta.contentFileId,
+            },
+            modifiedAt: Date.now(),
+          },
+        });
+      },
+
       renameProject: async (name: string) => {
         const { project, actionExecutor } = get();
         const action: Action = {

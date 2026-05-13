@@ -683,9 +683,14 @@ class ProjectManager {
             body: JSON.stringify({ content_file_id: contentFileId }),
           });
           if (draftResp.ok) {
-            const draftData = await draftResp.json() as { draft_id?: string };
+            const draftData = await draftResp.json() as { draft_id?: string; creator_id?: string };
             if (draftData.draft_id) {
-              (window as unknown as { __camiDraftId?: string }).__camiDraftId = draftData.draft_id;
+              const { useProjectStore } = await import("../stores/project-store");
+              useProjectStore.getState().setCamiMeta({
+                draftId: draftData.draft_id,
+                creatorId: draftData.creator_id ?? null,
+                contentFileId: contentFileId,
+              });
             }
           } else {
             console.warn("[ProjectManager] importFromCami: create-draft failed; Save will be disabled");
@@ -706,8 +711,8 @@ class ProjectManager {
    * importFromOreelData. The EF replaces stale presigned URLs with fresh ones,
    * so the timeline materializes correctly.
    *
-   * Phase 4b.1: stashes draft_id on window.__camiDraftId for the Save handler.
-   * TODO post-4b.1: move draft_id into project store _camiMeta slot instead.
+   * Phase 4b.2: stores draft_id + creator_id + content_file_id in the project
+   * store's _camiMeta slot. Persists across tab refreshes via IndexedDB.
    */
   async loadFromDraft(draftId: string): Promise<boolean> {
     const url = import.meta.env.VITE_CAMI_SUPABASE_URL;
@@ -739,7 +744,12 @@ class ProjectManager {
       }
       const success = await this.importFromOreelData(project);
       if (success) {
-        (window as unknown as { __camiDraftId?: string }).__camiDraftId = draftId;
+        const { useProjectStore } = await import("../stores/project-store");
+        useProjectStore.getState().setCamiMeta({
+          draftId: data.draft?.id ?? draftId,
+          creatorId: data.draft?.creator_id ?? null,
+          contentFileId: data.draft?.content_file_id ?? null,
+        });
       }
       return success;
     } catch (err) {
