@@ -21,6 +21,7 @@ import {
   Diamond,
   Sparkles,
   Play,
+  Save,
 } from "lucide-react";
 import { useProjectStore } from "../../stores/project-store";
 import { useUIStore } from "../../stores/ui-store";
@@ -106,6 +107,52 @@ export const Toolbar: React.FC = () => {
   const handleStartMoGraphTour = useCallback(() => {
     localStorage.removeItem(MOGRAPH_TOUR_KEY);
     startMoGraphTour();
+  }, []);
+
+  // Phase 4b.1: Save current project to Cami via export-draft-to-content render=false.
+  const [isSaving, setIsSaving] = useState(false);
+  const handleSaveToCami = useCallback(async () => {
+    const draftId = (window as unknown as { __camiDraftId?: string }).__camiDraftId;
+    if (!draftId) {
+      toast.error(
+        "Save unavailable",
+        "Reopen this project from mfh-platform to enable Save."
+      );
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const project = useProjectStore.getState().project;
+      const url = import.meta.env.VITE_CAMI_SUPABASE_URL;
+      const key = import.meta.env.VITE_CAMI_SUPABASE_ANON_KEY;
+      if (!url || !key) {
+        toast.error("Save failed", "Missing Cami connection config");
+        return;
+      }
+      const resp = await fetch(`${url}/functions/v1/export-draft-to-content`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          apikey: key,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          draft_id: draftId,
+          edit_plan_json: project,
+          render: false,
+        }),
+      });
+      if (!resp.ok) {
+        const txt = await resp.text();
+        throw new Error(`HTTP ${resp.status}: ${txt}`);
+      }
+      toast.success("Saved", "Draft saved to Cami.");
+    } catch (err) {
+      console.error("[Save] failed:", err);
+      toast.error("Save failed", err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsSaving(false);
+    }
   }, []);
 
   const hasSelectedClip = selectedItems.some(
@@ -868,11 +915,32 @@ export const Toolbar: React.FC = () => {
           </TooltipContent>
         </Tooltip>
 
-        {/* AI Assist button — Phase 4a stub. Full implementation in Phase 4b. */}
+        {/* Save button — Phase 4b.1. Writes timeline to Cami via export-draft-to-content (render=false). */}
         <Tooltip>
           <TooltipTrigger asChild>
             <button
-              onClick={() => alert("AI features coming soon (Phase 4b)")}
+              onClick={handleSaveToCami}
+              disabled={isSaving}
+              className="flex items-center gap-2 px-3 py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSaving ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Save size={14} />
+              )}
+              <span className="text-sm font-medium">{isSaving ? "Saving…" : "Save"}</span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Save changes to Cami</p>
+          </TooltipContent>
+        </Tooltip>
+
+        {/* AI Assist button — Phase 4a stub. Full implementation in Phase 4b.2. */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => alert("AI features coming soon (Phase 4b.2)")}
               className="flex items-center gap-2 px-3 py-2 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 rounded-lg transition-colors"
             >
               <Sparkles size={14} />
@@ -880,7 +948,7 @@ export const Toolbar: React.FC = () => {
             </button>
           </TooltipTrigger>
           <TooltipContent>
-            <p>AI features coming soon (Phase 4b)</p>
+            <p>AI features coming soon (Phase 4b.2)</p>
           </TooltipContent>
         </Tooltip>
 

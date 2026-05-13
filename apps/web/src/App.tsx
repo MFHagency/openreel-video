@@ -102,6 +102,18 @@ function App() {
           navigate("welcome");
         }
       })();
+    } else if (route === "draft" && params.draftId) {
+      hasHandledInitialRoute.current = true;
+      void (async () => {
+        const { projectManager } = await import("./services/project-manager");
+        const success = await projectManager.loadFromDraft(params.draftId!);
+        if (success) {
+          navigate("editor");
+        } else {
+          toast.error("Load failed", "Failed to load draft from Cami. Check console for details.");
+          navigate("welcome");
+        }
+      })();
     } else if (route === "editor" && skipWelcomeScreen) {
       hasHandledInitialRoute.current = true;
     } else if (["welcome", "templates", "recent"].includes(route)) {

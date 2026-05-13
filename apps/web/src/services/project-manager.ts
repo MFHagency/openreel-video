@@ -669,9 +669,81 @@ class ProjectManager {
         console.error("[ProjectManager] importFromCami: malformed EF response (no mediaLibrary.items)");
         return false;
       }
-      return this.importFromOreelData(project);
+      const success = await this.importFromOreelData(project);
+      if (success) {
+        // Phase 4b.1: also create a draft row so Save works. Best-effort.
+        try {
+          const draftResp = await fetch(`${url}/functions/v1/create-draft`, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${key}`,
+              "apikey": key,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ content_file_id: contentFileId }),
+          });
+          if (draftResp.ok) {
+            const draftData = await draftResp.json() as { draft_id?: string };
+            if (draftData.draft_id) {
+              (window as unknown as { __camiDraftId?: string }).__camiDraftId = draftData.draft_id;
+            }
+          } else {
+            console.warn("[ProjectManager] importFromCami: create-draft failed; Save will be disabled");
+          }
+        } catch (e) {
+          console.warn("[ProjectManager] importFromCami: create-draft error:", e);
+        }
+      }
+      return success;
     } catch (err) {
       console.error("[ProjectManager] importFromCami fetch error:", err);
+      return false;
+    }
+  }
+
+  /**
+   * Load a saved draft from Cami's load-draft EF by draft_id, then import via
+   * importFromOreelData. The EF replaces stale presigned URLs with fresh ones,
+   * so the timeline materializes correctly.
+   *
+   * Phase 4b.1: stashes draft_id on window.__camiDraftId for the Save handler.
+   * TODO post-4b.1: move draft_id into project store _camiMeta slot instead.
+   */
+  async loadFromDraft(draftId: string): Promise<boolean> {
+    const url = import.meta.env.VITE_CAMI_SUPABASE_URL;
+    const key = import.meta.env.VITE_CAMI_SUPABASE_ANON_KEY;
+    if (!url || !key) {
+      console.error("[ProjectManager] missing VITE_CAMI_SUPABASE_URL or VITE_CAMI_SUPABASE_ANON_KEY");
+      return false;
+    }
+    try {
+      const resp = await fetch(`${url}/functions/v1/load-draft`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${key}`,
+          "apikey": key,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ draft_id: draftId }),
+      });
+      if (!resp.ok) {
+        const text = await resp.text();
+        console.error(`[ProjectManager] loadFromDraft EF returned ${resp.status}:`, text);
+        return false;
+      }
+      const data = await resp.json();
+      const project = data.project;
+      if (!project?.mediaLibrary?.items) {
+        console.error("[ProjectManager] loadFromDraft: malformed EF response");
+        return false;
+      }
+      const success = await this.importFromOreelData(project);
+      if (success) {
+        (window as unknown as { __camiDraftId?: string }).__camiDraftId = draftId;
+      }
+      return success;
+    } catch (err) {
+      console.error("[ProjectManager] loadFromDraft fetch error:", err);
       return false;
     }
   }

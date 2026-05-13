@@ -7,7 +7,8 @@ export type AppRoute =
   | "templates"
   | "recent"
   | "share"
-  | "import";
+  | "import"
+  | "draft";
 
 export interface RouteParams {
   dimensions?: string;
@@ -18,6 +19,7 @@ export interface RouteParams {
   tab?: string;
   shareId?: string;
   contentFileId?: string;
+  draftId?: string;
 }
 
 export interface RouterState {
@@ -47,10 +49,15 @@ function parseHash(hash: string): RouterState {
     "recent",
     "share",
     "import",
+    "draft",
   ];
 
   if (route === "share" && pathParts[1]) {
     params.shareId = pathParts[1];
+  }
+
+  if (route === "draft" && pathParts[1]) {
+    params.draftId = pathParts[1];
   }
 
   return {
