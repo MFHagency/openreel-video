@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { autoSaveManager, type AutoSaveMetadata } from "../services/auto-save";
 import { useProjectStore } from "../stores/project-store";
 
@@ -10,8 +10,14 @@ interface RecoveryState {
 
 export function useProjectRecovery(options?: { skip?: boolean }) {
   const skip = options?.skip ?? false;
+  // Latch: once we've decided to skip for this tab's lifetime, never run the
+  // autosave check, even if the route flips later. This prevents the dialog
+  // from appearing after navigate("editor") fires post-loadFromDraft.
+  const everSkipped = useRef<boolean>(skip);
+  if (skip) everSkipped.current = true;
+  const effectiveSkip = everSkipped.current;
   const [state, setState] = useState<RecoveryState>({
-    isChecking: !skip,
+    isChecking: !effectiveSkip,
     availableSaves: [],
     showDialog: false,
   });
@@ -19,7 +25,7 @@ export function useProjectRecovery(options?: { skip?: boolean }) {
   const recoverFromAutoSave = useProjectStore((s) => s.recoverFromAutoSave);
 
   useEffect(() => {
-    if (skip) {
+    if (effectiveSkip) {
       setState({ isChecking: false, availableSaves: [], showDialog: false });
       return;
     }
@@ -52,7 +58,7 @@ export function useProjectRecovery(options?: { skip?: boolean }) {
     };
 
     checkForRecovery();
-  }, [skip]);
+  }, [effectiveSkip]);
 
   const recover = useCallback(
     async (saveId: string) => {
