@@ -31,6 +31,8 @@ export interface CamiMeta {
   readonly draftId: string | null;
   readonly creatorId: string | null;
   readonly contentFileId: string | null;
+  /** Phase 5: per-draft HS256 JWT scoped to this draft's creator. Used as Authorization header on all Cami EF calls. Refreshed via load-draft on 401. */
+  readonly draft_jwt?: string | null;
 }
 
 export interface MediaLibrary {

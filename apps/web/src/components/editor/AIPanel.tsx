@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { useProjectStore } from "../../stores/project-store";
 import { applyRepitchCandidates } from "./applyRepitchCandidates";
+import { camiEfFetch } from "../../services/cami-fetch";
 
 type CapabilityId = "captions" | "music" | "effects" | "repitch";
 
@@ -95,19 +96,12 @@ export function AIPanel({ open, onClose }: AIPanelProps) {
       setLoading(true);
       setErrors((e) => ({ ...e, [capability]: "" }));
       try {
-        const resp = await fetch(`${url}/functions/v1/${tab.efName}`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${key}`,
-            apikey: key,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            draft_id: camiMeta.draftId,
-            content_file_id: camiMeta.contentFileId,
-            creator_id: camiMeta.creatorId,
-            escalate_to_sonnet: escalate,
-          }),
+        // Phase 5: camiEfFetch attaches draft_jwt as Bearer token (with 401 refresh).
+        const resp = await camiEfFetch(tab.efName, {
+          draft_id: camiMeta.draftId,
+          content_file_id: camiMeta.contentFileId,
+          creator_id: camiMeta.creatorId,
+          escalate_to_sonnet: escalate,
         });
         const body = await resp.json();
         if (!resp.ok) {

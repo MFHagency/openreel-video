@@ -733,7 +733,8 @@ class ProjectManager {
           body: JSON.stringify({ content_file_id: contentFileId }),
         });
         if (draftResp.ok) {
-          const draftData = await draftResp.json() as { draft_id?: string; creator_id?: string };
+          // Phase 5: capture draft_jwt alongside draft_id so EVE can authenticate EF calls.
+          const draftData = await draftResp.json() as { draft_id?: string; creator_id?: string; draft_jwt?: string };
           if (draftData.draft_id) {
             projectWithMeta = {
               ...project,
@@ -741,6 +742,7 @@ class ProjectManager {
                 draftId: draftData.draft_id,
                 creatorId: draftData.creator_id ?? null,
                 contentFileId: contentFileId,
+                draft_jwt: draftData.draft_jwt ?? null,
               },
             };
           }
@@ -804,6 +806,7 @@ class ProjectManager {
       // originalUrl fetch, replaceMediaAsset, etc.) that capture stale closures.
       // Phase 4b.4: transform isPlaceholder items to streamingOnly
       const streamingItems = await applyStreamingTransform(rawProject.mediaLibrary.items as MediaItem[]);
+      // Phase 5: capture draft_jwt from load-draft response so EVE can authenticate EF calls.
       const project = {
         ...rawProject,
         mediaLibrary: { ...rawProject.mediaLibrary, items: streamingItems },
@@ -811,6 +814,7 @@ class ProjectManager {
           draftId: data.draft?.id ?? draftId,
           creatorId: data.draft?.creator_id ?? null,
           contentFileId: data.draft?.content_file_id ?? null,
+          draft_jwt: (data as { draft_jwt?: string }).draft_jwt ?? null,
         },
       };
       const success = await this.importFromOreelData(project);

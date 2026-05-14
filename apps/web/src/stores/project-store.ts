@@ -99,8 +99,8 @@ export interface ProjectState {
     settings?: Partial<ProjectSettings>,
   ) => void;
   loadProject: (project: Project) => void;
-  /** Phase 4b.2: stash Cami platform linkage on the project. Persists via IndexedDB. */
-  setCamiMeta: (meta: { draftId: string | null; creatorId: string | null; contentFileId: string | null }) => void;
+  /** Phase 4b.2 / Phase 5: stash Cami platform linkage on the project. Persists via IndexedDB. draft_jwt added Phase 5. */
+  setCamiMeta: (meta: { draftId: string | null; creatorId: string | null; contentFileId: string | null; draft_jwt?: string | null }) => void;
   /** Phase 4b.3: replace all clips on a track with a new set (e.g. ai-repitch apply). */
   replaceTrackClips: (trackId: string, newClips: Clip[]) => void;
   /** Phase 4b.4: patch thumbnails on a media item after background enrichment. */
@@ -633,6 +633,8 @@ export const useProjectStore = create<ProjectState>()(
               draftId: meta.draftId,
               creatorId: meta.creatorId,
               contentFileId: meta.contentFileId,
+              // Phase 5: persist draft_jwt if provided; keep existing if not.
+              draft_jwt: meta.draft_jwt !== undefined ? meta.draft_jwt : project._camiMeta?.draft_jwt,
             },
             modifiedAt: Date.now(),
           },
