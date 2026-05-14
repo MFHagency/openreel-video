@@ -91,16 +91,17 @@ export function applyRepitchCandidates(
   };
 }
 
-// Re-implement makeDefaultTransform locally to avoid coupling to internal types.
-// Mirror the editor-project-from-content EF version exactly.
+// Default clip transform — MUST mirror editor-project-from-content/index.ts
+// `makeDefaultTransform()` exactly. VideoEngine.renderFrame reads
+// transform.position.x, transform.scale.x, transform.anchor.x, transform.crop.x
+// (nested shapes). A flat {x, y, scale: number, anchorX, anchorY} shape causes
+// "Cannot read properties of undefined (reading 'x')" in Preview.
 function makeDefaultTransform() {
   return {
-    x: 0,
-    y: 0,
-    scale: 1,
+    position: { x: 0, y: 0 },
+    scale: { x: 1.0, y: 1.0 },
     rotation: 0,
-    opacity: 1,
-    anchorX: 0.5,
-    anchorY: 0.5,
+    anchor: { x: 0.5, y: 0.5 },
+    opacity: 1.0,
   };
 }
