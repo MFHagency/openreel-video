@@ -38,6 +38,7 @@ import {
   type TimeEstimate,
 } from "@openreel/core";
 import { ExportDialog } from "./ExportDialog";
+import { getMediaBridge } from "../../bridges/media-bridge";
 import { ScreenRecorder } from "./ScreenRecorder";
 import { AIPanel } from "./AIPanel";
 import { HistoryPanel } from "./inspector/HistoryPanel";
@@ -379,6 +380,33 @@ function stripEphemeralMediaState(project: unknown): unknown {
       setIsExportOpen(false);
 
       try {
+        // Phase 4b.4: materialize any streamingOnly items before export engine runs.
+        const streamingItems = project.mediaLibrary.items.filter(
+          (item) => item.streamingOnly && !item.blob && item.originalUrl,
+        );
+        if (streamingItems.length > 0) {
+          setExportState({ isExporting: true, progress: 0, phase: "Preparing export — downloading source media…", error: null, complete: false });
+          const bridge = getMediaBridge();
+          const { useProjectStore: pStore } = await import("../../stores/project-store");
+          for (let i = 0; i < streamingItems.length; i++) {
+            const item = streamingItems[i];
+            const mimeType = item.name.toLowerCase().endsWith(".mov") ? "video/quicktime"
+              : item.name.toLowerCase().endsWith(".mp4") ? "video/mp4" : "video/mp4";
+            const blob = await bridge.materializeStreaming(
+              item.originalUrl!,
+              item.name,
+              mimeType,
+              (pct) => setExportState((prev) => ({ ...prev, progress: Math.round(((i + pct / 100) / streamingItems.length) * 30) })),
+            );
+            if (blob) {
+              const file = new File([blob], item.name, { type: mimeType });
+              await pStore.getState().replaceMediaAsset(item.id, file);
+            } else {
+              toast({ title: `Could not download ${item.name} — export may fail`, variant: "destructive" });
+            }
+          }
+        }
+
         if (type === "wav") {
           const writable = await showSavePicker(`${project.name || "export"}.wav`, "wav");
 
