@@ -228,12 +228,24 @@ export class MediaBunnyEngine {
     }
   }
 
-  async createInput(file: File | Blob): Promise<MediaBunnyInput> {
+  async createInput(source: File | Blob | string): Promise<MediaBunnyInput> {
     this.ensureInitialized();
-    const { Input, ALL_FORMATS, BlobSource } = this.mediabunny!;
+    const { Input, ALL_FORMATS, BlobSource, UrlSource } = this.mediabunny!;
+
+    if (typeof source === "string") {
+      return new Input({
+        source: new UrlSource(source, {
+          // Cap retries — a bad URL must not hang the editor forever.
+          getRetryDelay: (previousAttempts: number) =>
+            previousAttempts >= 4 ? null : Math.min(2 ** previousAttempts, 16),
+          maxCacheSize: 16 * 1024 * 1024,
+        }),
+        formats: ALL_FORMATS,
+      });
+    }
 
     return new Input({
-      source: new BlobSource(file),
+      source: new BlobSource(source),
       formats: ALL_FORMATS,
     });
   }
@@ -314,7 +326,7 @@ export class MediaBunnyEngine {
         codec: "",
         sampleRate: 0,
         channels: 0,
-        fileSize: file.size,
+        fileSize: file.size,  // extractImageMetadata only called for File | Blob
         mimeType,
         hasVideo: false,
         hasAudio: false,
@@ -327,14 +339,14 @@ export class MediaBunnyEngine {
     }
   }
 
-  async extractMetadata(file: File | Blob): Promise<MediaTrackInfo> {
+  async extractMetadata(source: File | Blob | string): Promise<MediaTrackInfo> {
     // Special handling for images - MediaBunny doesn't process static images well
-    const fileType = file instanceof File ? file.type : "";
+    const fileType = typeof source === "string" ? "" : source instanceof File ? source.type : "";
     if (fileType.startsWith("image/")) {
-      return await this.extractImageMetadata(file, fileType);
+      return await this.extractImageMetadata(source as File | Blob, fileType);
     }
 
-    const input = await this.createInput(file);
+    const input = await this.createInput(source);
 
     try {
       const duration = await input.computeDuration();
@@ -388,7 +400,7 @@ export class MediaBunnyEngine {
         codec: videoCodec || audioCodec,
         sampleRate,
         channels,
-        fileSize: file.size,
+        fileSize: typeof source === "string" ? 0 : source.size,
         mimeType,
         hasVideo: !!videoTrack,
         hasAudio: !!audioTrack,
@@ -402,7 +414,7 @@ export class MediaBunnyEngine {
   }
 
   async generateThumbnails(
-    file: File | Blob,
+    file: File | Blob | string,
     count: number = 5,
     width: number = 320,
   ): Promise<ThumbnailResult[]> {
@@ -478,7 +490,7 @@ export class MediaBunnyEngine {
   }
 
   async generateFilmstripThumbnails(
-    file: File | Blob,
+    file: File | Blob | string,
     duration: number,
     thumbnailWidth: number = 80,
     interval: number = 1,
@@ -551,14 +563,15 @@ export class MediaBunnyEngine {
   }
 
   async getFrameAtTime(
-    file: File | Blob,
+    file: File | Blob | string,
     timestamp: number,
     width?: number,
   ): Promise<VideoFrameResult | null> {
     this.ensureInitialized();
     const { CanvasSink } = this.mediabunny!;
-    const fileName = "name" in file ? file.name : "blob";
-    const cacheKey = `${fileName}-${file.size}-${timestamp}-${width || "auto"}`;
+    const fileName = typeof file === "string" ? file.slice(-60) : ("name" in file ? (file as File).name : "blob");
+    const fileSize = typeof file === "string" ? 0 : file.size;
+    const cacheKey = `${fileName}-${fileSize}-${timestamp}-${width || "auto"}`;
     const cached = this.frameCache.get(cacheKey);
     if (cached) {
       cached.lastAccessed = Date.now();
@@ -645,7 +658,7 @@ export class MediaBunnyEngine {
   }
 
   async generateWaveform(
-    file: File | Blob,
+    file: File | Blob | string,
     samplesPerSecond: number = 100,
   ): Promise<WaveformData> {
     this.ensureInitialized();

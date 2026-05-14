@@ -57,6 +57,12 @@ export interface MediaItem {
   readonly kieaiError?: boolean;
   /** KieAI task ID used to poll for completion */
   readonly kieaiTaskId?: string;
+  /**
+   * When true, blob is null and media is served via originalUrl using mediabunny
+   * UrlSource (Range requests). Set by importFromCami / loadFromDraft after
+   * Phase 4b.4. isPlaceholder=false, blob=null, originalUrl=<R2 URL>.
+   */
+  readonly streamingOnly?: boolean;
 }
 
 /** Thumbnail for filmstrip display in timeline */
