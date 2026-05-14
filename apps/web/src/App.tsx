@@ -101,24 +101,25 @@ function App() {
       void (async () => {
         const { projectManager } = await import("./services/project-manager");
         const success = await projectManager.importFromCami(params.contentFileId!);
-        if (success) {
-          navigate("editor");
-        } else {
+        if (!success) {
           toast.error("Import failed", "Failed to import project from Cami. Check console for details.");
           navigate("welcome");
         }
+        // Phase 4b.2: on success, DON'T navigate("editor"). The URL hash stays as
+        // #/import/<id> so a tab refresh re-runs importFromCami and re-populates
+        // _camiMeta. The editor renders automatically because "import" is not in
+        // the showWelcome route list.
       })();
     } else if (route === "draft" && params.draftId) {
       hasHandledInitialRoute.current = true;
       void (async () => {
         const { projectManager } = await import("./services/project-manager");
         const success = await projectManager.loadFromDraft(params.draftId!);
-        if (success) {
-          navigate("editor");
-        } else {
+        if (!success) {
           toast.error("Load failed", "Failed to load draft from Cami. Check console for details.");
           navigate("welcome");
         }
+        // Phase 4b.2: on success, DON'T navigate("editor"). See import branch above.
       })();
     } else if (route === "editor" && skipWelcomeScreen) {
       hasHandledInitialRoute.current = true;

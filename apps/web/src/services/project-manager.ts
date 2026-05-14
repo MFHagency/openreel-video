@@ -669,35 +669,42 @@ class ProjectManager {
         console.error("[ProjectManager] importFromCami: malformed EF response (no mediaLibrary.items)");
         return false;
       }
-      const success = await this.importFromOreelData(project);
-      if (success) {
-        // Phase 4b.1: also create a draft row so Save works. Best-effort.
-        try {
-          const draftResp = await fetch(`${url}/functions/v1/create-draft`, {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${key}`,
-              "apikey": key,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ content_file_id: contentFileId }),
-          });
-          if (draftResp.ok) {
-            const draftData = await draftResp.json() as { draft_id?: string; creator_id?: string };
-            if (draftData.draft_id) {
-              const { useProjectStore } = await import("../stores/project-store");
-              useProjectStore.getState().setCamiMeta({
+      // Phase 4b.1: create a draft row so Save works. Best-effort.
+      // Phase 4b.2: do this BEFORE importFromOreelData so _camiMeta can ride
+      // on the project object through every async restorer that spreads ...project.
+      let projectWithMeta = project;
+      try {
+        const draftResp = await fetch(`${url}/functions/v1/create-draft`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${key}`,
+            "apikey": key,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ content_file_id: contentFileId }),
+        });
+        if (draftResp.ok) {
+          const draftData = await draftResp.json() as { draft_id?: string; creator_id?: string };
+          if (draftData.draft_id) {
+            projectWithMeta = {
+              ...project,
+              _camiMeta: {
                 draftId: draftData.draft_id,
                 creatorId: draftData.creator_id ?? null,
                 contentFileId: contentFileId,
-              });
-            }
-          } else {
-            console.warn("[ProjectManager] importFromCami: create-draft failed; Save will be disabled");
+              },
+            };
           }
-        } catch (e) {
-          console.warn("[ProjectManager] importFromCami: create-draft error:", e);
+        } else {
+          console.warn("[ProjectManager] importFromCami: create-draft failed; Save will be disabled");
         }
+      } catch (e) {
+        console.warn("[ProjectManager] importFromCami: create-draft error:", e);
+      }
+      const success = await this.importFromOreelData(projectWithMeta);
+      if (success && projectWithMeta._camiMeta) {
+        const { useProjectStore } = await import("../stores/project-store");
+        useProjectStore.getState().setCamiMeta(projectWithMeta._camiMeta);
       }
       return success;
     } catch (err) {
@@ -737,19 +744,29 @@ class ProjectManager {
         return false;
       }
       const data = await resp.json();
-      const project = data.project;
-      if (!project?.mediaLibrary?.items) {
+      const rawProject = data.project;
+      if (!rawProject?.mediaLibrary?.items) {
         console.error("[ProjectManager] loadFromDraft: malformed EF response");
         return false;
       }
-      const success = await this.importFromOreelData(project);
-      if (success) {
-        const { useProjectStore } = await import("../stores/project-store");
-        useProjectStore.getState().setCamiMeta({
+      // Attach _camiMeta BEFORE importFromOreelData so the field is present on
+      // the project object when loadProject() does set({ project }), and on
+      // every subsequent { ...project } spread in async restorers (Tier 0
+      // originalUrl fetch, replaceMediaAsset, etc.) that capture stale closures.
+      const project = {
+        ...rawProject,
+        _camiMeta: {
           draftId: data.draft?.id ?? draftId,
           creatorId: data.draft?.creator_id ?? null,
           contentFileId: data.draft?.content_file_id ?? null,
-        });
+        },
+      };
+      const success = await this.importFromOreelData(project);
+      // setCamiMeta is no longer needed here — the field rode in on the project.
+      // Kept as a safety net for race conditions in the async restorer chain.
+      if (success) {
+        const { useProjectStore } = await import("../stores/project-store");
+        useProjectStore.getState().setCamiMeta(project._camiMeta);
       }
       return success;
     } catch (err) {
