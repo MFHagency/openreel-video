@@ -26,6 +26,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { useProjectStore } from "../../stores/project-store";
+import { applyRepitchCandidates } from "./applyRepitchCandidates";
 
 type CapabilityId = "captions" | "music" | "effects" | "repitch";
 
@@ -61,6 +62,7 @@ export function AIPanel({ open, onClose }: AIPanelProps) {
   const [results, setResults] = useState<Partial<Record<CapabilityId, AIResult>>>({});
   const [errors, setErrors] = useState<Partial<Record<CapabilityId, string>>>({});
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [applyingRepitch, setApplyingRepitch] = useState(false);
 
   const monthSpend = useMemo(() => {
     // Show the most recent spend from any tab's result (they all read the same source).
@@ -132,6 +134,36 @@ export function AIPanel({ open, onClose }: AIPanelProps) {
     setCopiedField(fieldId);
     setTimeout(() => setCopiedField(null), 1500);
   }, []);
+
+  const handleApplyRepitch = useCallback(async () => {
+    const repitchResult = results["repitch"];
+    const candidates = (repitchResult?.data as { candidates?: { arc: "hook" | "bridge" | "peak" | "close"; start_seconds: number; end_seconds: number; rationale: string }[] } | undefined)?.candidates;
+    if (!candidates || candidates.length === 0) return;
+
+    const confirmed = window.confirm(
+      `This will replace the current video track with ${candidates.length} new clips ` +
+        `(HOOK / BRIDGE / PEAK / CLOSE). The existing timeline edit will be lost. Continue?`,
+    );
+    if (!confirmed) return;
+
+    setApplyingRepitch(true);
+    try {
+      const project = useProjectStore.getState().project;
+      const result = applyRepitchCandidates(project, candidates);
+      if (!result.ok) {
+        console.error("[applyRepitchCandidates] failed:", result.reason);
+        alert(`Could not apply candidates: ${result.reason}. Please re-import the draft.`);
+        return;
+      }
+      useProjectStore.getState().replaceTrackClips(result.trackId, result.newClips);
+      onClose();
+    } catch (err) {
+      console.error("[handleApplyRepitch] error:", err);
+      alert("An error occurred while applying. See console.");
+    } finally {
+      setApplyingRepitch(false);
+    }
+  }, [results, onClose]);
 
   if (!open) return null;
 
@@ -224,6 +256,19 @@ export function AIPanel({ open, onClose }: AIPanelProps) {
             onCopy={copyToClipboard}
           />
         )}
+
+        {/* Re-pitch apply button — only shown when exactly 4 candidates returned */}
+        {activeTab === "repitch" &&
+          (results["repitch"]?.data as { candidates?: unknown[] } | undefined)?.candidates?.length === 4 && (
+            <button
+              type="button"
+              className="mt-3 w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-2 rounded text-sm font-medium transition-colors"
+              onClick={() => void handleApplyRepitch()}
+              disabled={applyingRepitch}
+            >
+              {applyingRepitch ? "Applying…" : "Replace timeline candidates"}
+            </button>
+          )}
       </div>
 
       {/* Spend chip */}
@@ -370,7 +415,7 @@ function MusicResult({ data }: { data: unknown }) {
   return (
     <div className="space-y-2 text-xs">
       <p className="text-[11px] text-text-muted italic">
-        Audio swap wiring ships in Phase 4b.3. Copy a title to find it in the audio library.
+        Copy a title to find it in the audio library.
       </p>
       {d.picks?.map((pick, i) => (
         <div key={pick.audio_id} className="p-2 bg-background-secondary rounded border border-border">
@@ -380,6 +425,11 @@ function MusicResult({ data }: { data: unknown }) {
           <p className="text-text-muted text-[11px] mt-1">{pick.rationale}</p>
         </div>
       ))}
+      <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-900">
+        <strong>Audio swap not yet wired.</strong> Recommendations above are advisory.
+        Wiring the swap into the timeline is pending Oscar&apos;s decision on audio library source
+        (ccMixter / Suno / Epidemic Sound). Tracked as a Phase 4b.3+ follow-up.
+      </div>
     </div>
   );
 }
@@ -431,7 +481,7 @@ function RepitchResult({ data }: { data: unknown }) {
   return (
     <div className="space-y-2 text-xs">
       <p className="text-[11px] text-text-muted italic">
-        Fresh arc suggestions. Auto-apply to timeline ships in Phase 4b.3 — manual swap for now. Total: {total.toFixed(1)}s.
+        Fresh arc suggestions. Use the button below to replace the timeline. Total: {total.toFixed(1)}s.
       </p>
       {d.candidates?.map((c, i) => {
         const colorClass = ARC_COLORS[c.arc] || "text-text-secondary bg-background-tertiary";
