@@ -271,7 +271,7 @@ export const Preview: React.FC = () => {
   // Video element cache for native hardware-accelerated frame decoding (thumbnails/scrubbing)
   // Much more reliable than MediaBunny's CanvasSink for random-access seeking
   const videoElementCacheRef = useRef<
-    Map<string, { video: HTMLVideoElement; url: string; lastUsed: number }>
+    Map<string, { video: HTMLVideoElement; url: string; lastUsed: number; needsRevoke: boolean }>
   >(new Map());
 
   // Persistent decoder cache for efficient playback (legacy - kept for fallback)
@@ -535,7 +535,7 @@ export const Preview: React.FC = () => {
 
       for (const entry of videoElementCacheRef.current.values()) {
         entry.video.src = "";
-        URL.revokeObjectURL(entry.url);
+        if (entry.needsRevoke) URL.revokeObjectURL(entry.url);
       }
       videoElementCacheRef.current.clear();
 
@@ -1052,7 +1052,18 @@ export const Preview: React.FC = () => {
         let cached = videoElementCacheRef.current.get(cacheKey);
 
         if (!cached) {
-          const url = URL.createObjectURL(mediaItem.blob);
+          let url: string;
+          let needsRevoke: boolean;
+          if (mediaItem.blob) {
+            url = URL.createObjectURL(mediaItem.blob);
+            needsRevoke = true;
+          } else if (mediaItem.streamingOnly && mediaItem.originalUrl) {
+            url = mediaItem.originalUrl;
+            needsRevoke = false;
+          } else {
+            console.error("[Preview] No blob or originalUrl for mediaItem:", mediaItem.id);
+            return null;
+          }
           const video = document.createElement("video");
           video.src = url;
           video.muted = true;
@@ -1075,7 +1086,7 @@ export const Preview: React.FC = () => {
             };
           });
 
-          cached = { video, url, lastUsed: Date.now() };
+          cached = { video, url, lastUsed: Date.now(), needsRevoke };
           videoElementCacheRef.current.set(cacheKey, cached);
 
           if (videoElementCacheRef.current.size > 8) {
@@ -1091,7 +1102,7 @@ export const Preview: React.FC = () => {
               const oldEntry = videoElementCacheRef.current.get(oldestKey);
               if (oldEntry) {
                 oldEntry.video.src = "";
-                URL.revokeObjectURL(oldEntry.url);
+                if (oldEntry.needsRevoke) URL.revokeObjectURL(oldEntry.url);
                 videoElementCacheRef.current.delete(oldestKey);
               }
             }
@@ -1147,7 +1158,7 @@ export const Preview: React.FC = () => {
         const cached = videoElementCacheRef.current.get(clip.mediaId);
         if (cached) {
           cached.video.src = "";
-          URL.revokeObjectURL(cached.url);
+          if (cached.needsRevoke) URL.revokeObjectURL(cached.url);
           videoElementCacheRef.current.delete(clip.mediaId);
         }
         return null;
@@ -1870,20 +1881,30 @@ export const Preview: React.FC = () => {
 
       const videoCache = new Map<
         string,
-        { video: HTMLVideoElement; url: string }
+        { video: HTMLVideoElement; url: string; needsRevoke: boolean }
       >();
       const loadPromises: Promise<void>[] = [];
 
       for (const { clip, mediaItem } of clips) {
-        if (!videoCache.has(clip.mediaId) && mediaItem.blob) {
-          const url = URL.createObjectURL(mediaItem.blob);
+        const hasMedia = mediaItem.blob || (mediaItem.streamingOnly && mediaItem.originalUrl);
+        if (!videoCache.has(clip.mediaId) && hasMedia) {
+          let url: string;
+          let needsRevoke: boolean;
+          if (mediaItem.blob) {
+            url = URL.createObjectURL(mediaItem.blob);
+            needsRevoke = true;
+          } else {
+            url = mediaItem.originalUrl!;
+            needsRevoke = false;
+          }
           const video = document.createElement("video");
           video.src = url;
           video.muted = true;
           video.playsInline = true;
           video.preload = "auto";
+          video.crossOrigin = "anonymous";
 
-          videoCache.set(clip.mediaId, { video, url });
+          videoCache.set(clip.mediaId, { video, url, needsRevoke });
 
           loadPromises.push(
             new Promise<void>((resolve, reject) => {
@@ -2237,10 +2258,10 @@ export const Preview: React.FC = () => {
         nativePlaybackActiveRef.current = false;
         if (rafId) cancelAnimationFrame(rafId);
 
-        for (const [, { video, url }] of videoCache) {
+        for (const [, { video, url, needsRevoke }] of videoCache) {
           video.pause();
           video.src = "";
-          URL.revokeObjectURL(url);
+          if (needsRevoke) URL.revokeObjectURL(url);
         }
         videoCache.clear();
 
