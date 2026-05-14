@@ -1,5 +1,44 @@
-import type { Project, ProjectSettings } from "@openreel/core";
+import type { Project, ProjectSettings, MediaItem } from "@openreel/core";
 import { v4 as uuidv4 } from "uuid";
+
+function contentTypeFromName(name: string): string {
+  const ext = (name.split(".").pop() ?? "").toLowerCase();
+  const map: Record<string, string> = {
+    mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm",
+    mkv: "video/x-matroska", mp3: "audio/mpeg", wav: "audio/wav",
+    aac: "audio/aac", jpg: "image/jpeg", jpeg: "image/jpeg",
+    png: "image/png", webp: "image/webp",
+  };
+  return map[ext] ?? "video/mp4";
+}
+
+async function applyStreamingTransform(
+  items: MediaItem[],
+): Promise<MediaItem[]> {
+  const { getMediaBridge } = await import("../bridges/media-bridge");
+  const bridge = getMediaBridge();
+  if (!bridge.isInitialized()) {
+    try { await bridge.initialize(); } catch { return items; }
+  }
+  return Promise.all(
+    items.map(async (item) => {
+      if (!item.isPlaceholder || !item.originalUrl) return item;
+      const contentType = contentTypeFromName(item.name);
+      try {
+        const result = await bridge.importFromUrl(
+          item.originalUrl,
+          item.name,
+          item.metadata?.fileSize ?? 0,
+          contentType,
+        );
+        if (result.success) {
+          return { ...item, streamingOnly: true, isPlaceholder: false } as MediaItem;
+        }
+      } catch { /* leave as isPlaceholder=true for Tier 0 fallback */ }
+      return item;
+    }),
+  );
+}
 
 interface FilePickerAcceptType {
   description: string;
@@ -672,7 +711,17 @@ class ProjectManager {
       // Phase 4b.1: create a draft row so Save works. Best-effort.
       // Phase 4b.2: do this BEFORE importFromOreelData so _camiMeta can ride
       // on the project object through every async restorer that spreads ...project.
-      let projectWithMeta = project;
+      // Phase 4b.4: transform isPlaceholder items to streamingOnly before
+      // importFromOreelData, so Tier 0 full-fetch is skipped.
+      const streamingProject = {
+        ...project,
+        mediaLibrary: {
+          ...project.mediaLibrary,
+          items: await applyStreamingTransform(project.mediaLibrary.items as MediaItem[]),
+        },
+      };
+
+      let projectWithMeta = streamingProject;
       try {
         const draftResp = await fetch(`${url}/functions/v1/create-draft`, {
           method: "POST",
@@ -753,8 +802,11 @@ class ProjectManager {
       // the project object when loadProject() does set({ project }), and on
       // every subsequent { ...project } spread in async restorers (Tier 0
       // originalUrl fetch, replaceMediaAsset, etc.) that capture stale closures.
+      // Phase 4b.4: transform isPlaceholder items to streamingOnly
+      const streamingItems = await applyStreamingTransform(rawProject.mediaLibrary.items as MediaItem[]);
       const project = {
         ...rawProject,
+        mediaLibrary: { ...rawProject.mediaLibrary, items: streamingItems },
         _camiMeta: {
           draftId: data.draft?.id ?? draftId,
           creatorId: data.draft?.creator_id ?? null,

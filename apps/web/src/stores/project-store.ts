@@ -103,6 +103,10 @@ export interface ProjectState {
   setCamiMeta: (meta: { draftId: string | null; creatorId: string | null; contentFileId: string | null }) => void;
   /** Phase 4b.3: replace all clips on a track with a new set (e.g. ai-repitch apply). */
   replaceTrackClips: (trackId: string, newClips: Clip[]) => void;
+  /** Phase 4b.4: patch thumbnails on a media item after background enrichment. */
+  setMediaThumbnails: (mediaId: string, thumbnails: { timestamp: number; dataUrl: string }[]) => void;
+  /** Phase 4b.4: patch waveform peaks on a media item after background enrichment. */
+  setMediaWaveform: (mediaId: string, peaks: Float32Array) => void;
   renameProject: (name: string) => Promise<ActionResult>;
   updateSettings: (settings: Partial<ProjectSettings>) => Promise<ActionResult>;
 
@@ -488,6 +492,41 @@ export const useProjectStore = create<ProjectState>()(
           error: null,
         });
 
+        // Background enrichment for streamingOnly items (thumbnails + waveform).
+        // Runs AFTER the editor is interactive — don't await.
+        const streamingItems = fixedProject.mediaLibrary.items.filter(
+          (item) => item.streamingOnly && item.originalUrl &&
+            (!item.filmstripThumbnails || item.filmstripThumbnails.length === 0),
+        );
+        if (streamingItems.length > 0) {
+          (async () => {
+            const { getMediaBridge } = await import("../bridges/media-bridge");
+            const bridge = getMediaBridge();
+            if (!bridge.isInitialized()) {
+              try { await bridge.initialize(); } catch { return; }
+            }
+            for (const item of streamingItems) {
+              try {
+                const thumbs = await bridge.generateThumbnailsForUrl(
+                  item.originalUrl!,
+                  item.type as "video" | "audio" | "image",
+                );
+                if (thumbs.length > 0) {
+                  get().setMediaThumbnails(item.id, thumbs);
+                }
+                if (item.type === "video" || item.type === "audio") {
+                  const waveform = await bridge.generateWaveformForUrl(item.originalUrl!);
+                  if (waveform) {
+                    get().setMediaWaveform(item.id, waveform.peaks);
+                  }
+                }
+              } catch (err) {
+                console.warn(`[ProjectStore] Background enrichment failed for ${item.name}:`, err);
+              }
+            }
+          })();
+        }
+
         // Auto-restore placeholder assets — three tiers, run in order:
         //   Tier 0: fetch originalUrl (R2 presigned URLs from Cami)
         //   Tier 1: rebind via stored FileSystemFileHandle (same machine)
@@ -609,6 +648,41 @@ export const useProjectStore = create<ProjectState>()(
               ...project.timeline,
               tracks: project.timeline.tracks.map((t) =>
                 t.id === trackId ? { ...t, clips: newClips } : t,
+              ),
+            },
+            _camiMeta: project._camiMeta,
+            modifiedAt: Date.now(),
+          },
+        });
+      },
+
+      setMediaThumbnails: (mediaId, thumbnails) => {
+        const { project } = get();
+        const filmstripThumbnails = thumbnails.map((t) => ({ timestamp: t.timestamp, url: t.dataUrl }));
+        set({
+          project: {
+            ...project,
+            mediaLibrary: {
+              items: project.mediaLibrary.items.map((item) =>
+                item.id === mediaId
+                  ? { ...item, filmstripThumbnails, thumbnailUrl: filmstripThumbnails[0]?.url ?? item.thumbnailUrl }
+                  : item,
+              ),
+            },
+            _camiMeta: project._camiMeta,
+            modifiedAt: Date.now(),
+          },
+        });
+      },
+
+      setMediaWaveform: (mediaId, peaks) => {
+        const { project } = get();
+        set({
+          project: {
+            ...project,
+            mediaLibrary: {
+              items: project.mediaLibrary.items.map((item) =>
+                item.id === mediaId ? { ...item, waveformData: peaks } : item,
               ),
             },
             _camiMeta: project._camiMeta,
