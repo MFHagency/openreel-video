@@ -101,6 +101,8 @@ export interface ProjectState {
   loadProject: (project: Project) => void;
   /** Phase 4b.2: stash Cami platform linkage on the project. Persists via IndexedDB. */
   setCamiMeta: (meta: { draftId: string | null; creatorId: string | null; contentFileId: string | null }) => void;
+  /** Phase 4b.3: replace all clips on a track with a new set (e.g. ai-repitch apply). */
+  replaceTrackClips: (trackId: string, newClips: Clip[]) => void;
   renameProject: (name: string) => Promise<ActionResult>;
   updateSettings: (settings: Partial<ProjectSettings>) => Promise<ActionResult>;
 
@@ -593,6 +595,23 @@ export const useProjectStore = create<ProjectState>()(
               creatorId: meta.creatorId,
               contentFileId: meta.contentFileId,
             },
+            modifiedAt: Date.now(),
+          },
+        });
+      },
+
+      replaceTrackClips: (trackId, newClips) => {
+        const { project } = get();
+        set({
+          project: {
+            ...project,
+            timeline: {
+              ...project.timeline,
+              tracks: project.timeline.tracks.map((t) =>
+                t.id === trackId ? { ...t, clips: newClips } : t,
+              ),
+            },
+            _camiMeta: project._camiMeta,
             modifiedAt: Date.now(),
           },
         });
