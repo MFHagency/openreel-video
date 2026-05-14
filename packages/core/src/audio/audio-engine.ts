@@ -346,6 +346,10 @@ export class AudioEngine {
     if (cached) return cached;
 
     if (!mediaItem.blob) {
+      // For streaming-only items, attempt audio extraction via UrlSource
+      if (mediaItem.streamingOnly && mediaItem.originalUrl) {
+        return this.extractAudioFromVideo(mediaItem, context);
+      }
       console.warn(`No blob available for media item ${mediaItem.id}`);
       return null;
     }
@@ -379,14 +383,18 @@ export class AudioEngine {
     mediaItem: MediaItem,
     context: BaseAudioContext,
   ): Promise<AudioBuffer | null> {
-    if (!mediaItem.blob) return null;
+    if (!mediaItem.blob && !(mediaItem.streamingOnly && mediaItem.originalUrl)) return null;
 
     try {
       const mediabunny = await import("mediabunny");
-      const { Input, ALL_FORMATS, BlobSource, AudioSampleSink } = mediabunny;
+      const { Input, ALL_FORMATS, BlobSource, UrlSource, AudioSampleSink } = mediabunny;
+
+      const mediaSource = mediaItem.streamingOnly && mediaItem.originalUrl
+        ? new UrlSource(mediaItem.originalUrl, { maxCacheSize: 16 * 1024 * 1024 })
+        : new BlobSource(mediaItem.blob!);
 
       const input = new Input({
-        source: new BlobSource(mediaItem.blob),
+        source: mediaSource,
         formats: ALL_FORMATS,
       });
 
