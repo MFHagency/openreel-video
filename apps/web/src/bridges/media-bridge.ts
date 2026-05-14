@@ -150,6 +150,101 @@ export class MediaBridge {
     }
   }
 
+  /**
+   * Validate a URL is reachable via mediabunny UrlSource and extract metadata.
+   * Used by importFromCami + loadFromDraft before marking items streamingOnly.
+   * quickMode=true → metadata-only, no thumbnails or waveform.
+   */
+  async importFromUrl(
+    url: string,
+    name: string,
+    size: number,
+    contentType: string,
+    generateWaveform = false,
+    quickMode = true,
+  ): Promise<{ success: boolean; error?: string }> {
+    if (!this.initialized || !this.mediaImportService) {
+      return { success: false, error: "MediaBridge not initialized" };
+    }
+    try {
+      const result = await this.mediaImportService.importMediaFromUrl(url, {
+        name, size, contentType, generateWaveform, quickMode,
+      });
+      return result.success ? { success: true } : { success: false, error: result.error };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
+    }
+  }
+
+  async generateThumbnailsForUrl(
+    url: string,
+    mediaType: "video" | "audio" | "image",
+  ): Promise<{ timestamp: number; dataUrl: string }[]> {
+    if (!this.initialized || !this.mediaImportService) return [];
+    try {
+      const thumbnails = await this.mediaImportService.generateThumbnailsForUrl(url, mediaType, { count: 10, width: 160 });
+      return thumbnails.map((t) => ({ timestamp: t.timestamp, dataUrl: t.dataUrl || "" })).filter((t) => t.dataUrl);
+    } catch {
+      return [];
+    }
+  }
+
+  async generateWaveformForUrl(url: string): Promise<{ peaks: Float32Array } | null> {
+    if (!this.initialized || !this.mediaImportService) return null;
+    try {
+      const data = await this.mediaImportService.generateWaveformForUrl(url);
+      return data ? { peaks: data.peaks } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Fetch a streaming-only media item's full content into a Blob.
+   * Used by the Export path to materialize items that have no local blob yet.
+   */
+  async materializeStreaming(
+    originalUrl: string,
+    name: string,
+    mimeType: string,
+    onProgress?: (percent: number) => void,
+  ): Promise<Blob | null> {
+    try {
+      const resp = await fetch(originalUrl);
+      if (!resp.ok) return null;
+      const contentLength = Number(resp.headers.get("content-length") ?? 0);
+      if (!resp.body) {
+        const blob = await resp.blob();
+        onProgress?.(100);
+        return blob;
+      }
+      const reader = resp.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let received = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        received += value.length;
+        if (contentLength > 0) {
+          onProgress?.(Math.round((received / contentLength) * 100));
+        }
+      }
+      onProgress?.(100);
+      const totalLength = chunks.reduce((s, c) => s + c.length, 0);
+      const merged = new Uint8Array(totalLength);
+      let offset = 0;
+      for (const chunk of chunks) {
+        merged.set(chunk, offset);
+        offset += chunk.length;
+      }
+      return new Blob([merged], { type: mimeType || "application/octet-stream" });
+    } catch (error) {
+      console.error("[MediaBridge] materializeStreaming failed:", error);
+      return null;
+    }
+  }
+
   async generateThumbnailsForMedia(
     file: File | Blob,
     mediaType: "video" | "audio" | "image",

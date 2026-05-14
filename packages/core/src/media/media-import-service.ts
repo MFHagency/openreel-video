@@ -473,6 +473,51 @@ export class MediaImportService {
     };
   }
 
+  /**
+   * Import a media item from a URL using mediabunny UrlSource (Range requests).
+   * Returns a ProcessedMedia with blob=null for streamingOnly MediaItems.
+   * quickMode=true means metadata-only — thumbnails + waveform deferred to background.
+   */
+  async importMediaFromUrl(
+    url: string,
+    options: { name: string; size: number; contentType: string } & MediaImportOptions,
+  ): Promise<MediaImportResult> {
+    const opts = { ...DEFAULT_OPTIONS, ...options };
+
+    if (!isSupportedFormat(options.contentType)) {
+      return {
+        success: false,
+        error: `Unsupported format: ${options.contentType || "unknown"}`,
+      };
+    }
+    const mediaType = inferMediaType(options.contentType);
+    if (!mediaType) {
+      return { success: false, error: "Could not determine media type" };
+    }
+
+    try {
+      const trackInfo = await this.mediaEngine.extractMetadata(url);
+      const processedMedia: ProcessedMedia = {
+        id: uuidv4(),
+        name: options.name,
+        type: mediaType,
+        blob: null as unknown as Blob, // streamingOnly — blob populated on Export
+        metadata: {
+          ...trackInfo,
+          fileSize: options.size || trackInfo.fileSize,
+        },
+        thumbnails: [],
+        waveformData: null,
+      };
+      return { success: true, media: processedMedia };
+    } catch (error) {
+      return {
+        success: false,
+        error: `URL import failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      };
+    }
+  }
+
   async generateThumbnailsForMedia(
     file: File | Blob,
     mediaType: "video" | "audio" | "image",
@@ -530,6 +575,24 @@ export class MediaImportService {
       await this.initialize();
     }
     return this.mediaEngine.generateWaveform(file, samplesPerSecond);
+  }
+
+  async generateThumbnailsForUrl(
+    url: string,
+    mediaType: "video" | "audio" | "image",
+    options: { count?: number; width?: number } = {},
+  ): Promise<ThumbnailResult[]> {
+    if (!this.initialized) await this.initialize();
+    if (mediaType !== "video") return [];
+    return this.mediaEngine.generateThumbnails(url, options.count ?? 10, options.width ?? 160);
+  }
+
+  async generateWaveformForUrl(
+    url: string,
+    samplesPerSecond = 100,
+  ): Promise<WaveformData | null> {
+    if (!this.initialized) await this.initialize();
+    return this.mediaEngine.generateWaveform(url, samplesPerSecond);
   }
 }
 let importServiceInstance: MediaImportService | null = null;
