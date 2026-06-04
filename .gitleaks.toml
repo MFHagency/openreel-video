@@ -1,0 +1,17 @@
+# Extends gitleaks' built-in rules with detectors for secret formats the
+# default ruleset misses — notably Supabase's new sb_secret_ / sb_publishable_
+# API keys and sbp_ access tokens. Auto-loaded by gitleaks from the repo root.
+[extend]
+useDefault = true
+
+[[rules]]
+id = "supabase-api-key-new"
+description = "Supabase new-format API key (sb_secret_ / sb_publishable_)"
+regex = '''sb_(secret|publishable)_[A-Za-z0-9_-]{16,}'''
+keywords = ["sb_secret_", "sb_publishable_"]
+
+[[rules]]
+id = "supabase-token-sbp"
+description = "Supabase access/service token (sbp_)"
+regex = '''sbp_[A-Za-z0-9]{40,}'''
+keywords = ["sbp_"]
