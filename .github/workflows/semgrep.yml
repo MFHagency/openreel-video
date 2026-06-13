@@ -1,0 +1,17 @@
+name: semgrep
+on:
+  pull_request: {}
+  push:
+    branches: [main, master]
+permissions:
+  contents: read
+jobs:
+  semgrep:
+    name: semgrep
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - name: Semgrep scan (report-only baseline)
+        run: semgrep scan --config=p/default --config=p/security-audit --config=p/secrets --metrics=off
